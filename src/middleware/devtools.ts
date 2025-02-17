@@ -1,4 +1,5 @@
 import type {} from '@redux-devtools/extension'
+
 import type {
   StateCreator,
   StoreApi,
@@ -72,6 +73,7 @@ export interface DevtoolsOptions extends Config {
   name?: string
   enabled?: boolean
   anonymousActionType?: string
+  inferActionName?: boolean
   store?: string
 }
 
@@ -108,6 +110,13 @@ type StoreInformation = StoreApi<unknown>
 type ConnectionInformation = {
   connection: Connection
   stores: Record<StoreName, StoreInformation>
+}
+const findCallerName = (stack: string) => {
+  const traceLines = stack?.split?.('\n') ?? []
+  const isBlinkStackTrace = stack.startsWith('Error')
+  return isBlinkStackTrace
+    ? traceLines?.[2]?.trim().split(' ')[1]
+    : traceLines?.[1]?.trim().split('@')[0]
 }
 const trackedConnections: Map<ConnectionName, ConnectionInformation> = new Map()
 
@@ -149,7 +158,8 @@ const extractConnectionInformation = (
 const devtoolsImpl: DevtoolsImpl =
   (fn, devtoolsOptions = {}) =>
   (set, get, api) => {
-    const { enabled, anonymousActionType, store, ...options } = devtoolsOptions
+    const { enabled, anonymousActionType, inferActionName, store, ...options } =
+      devtoolsOptions
 
     type S = ReturnType<typeof fn> & {
       [store: string]: ReturnType<typeof fn>
@@ -178,9 +188,13 @@ const devtoolsImpl: DevtoolsImpl =
     ;(api.setState as any) = ((state, replace, nameOrAction: Action) => {
       const r = set(state, replace as any)
       if (!isRecording) return r
+      let defaultActionName = anonymousActionType
+      if (inferActionName) {
+        defaultActionName = findCallerName(new Error().stack ?? '')
+      }
       const action: { type: string } =
         nameOrAction === undefined
-          ? { type: anonymousActionType || 'anonymous' }
+          ? { type: defaultActionName || 'anonymous' }
           : typeof nameOrAction === 'string'
             ? { type: nameOrAction }
             : nameOrAction

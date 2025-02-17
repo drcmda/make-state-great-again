@@ -189,6 +189,36 @@ describe('When state changes...', () => {
   })
 })
 
+describe('When state changes with automatic setter inferring...', () => {
+  it("sends { type: setStateName || 'setCount`, ...rest } as the action with current state", async () => {
+    const options = {
+      name: 'testOptionsName',
+      enabled: true,
+      inferActionName: true,
+    }
+
+    const api = createStore(
+      devtools(
+        (set) => ({
+          count: 0,
+          setCount: (newCount: number) => {
+            set({ count: newCount })
+          },
+        }),
+        options,
+      ),
+    )
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    api.getState().setCount(10)
+    const [connection] = getNamedConnectionApis(options.name)
+    expect(connection.send).toHaveBeenLastCalledWith(
+      { type: 'Object.setCount' },
+      { count: 10, setCount: expect.any(Function) },
+    )
+  })
+})
+
 describe('when it receives a message of type...', () => {
   describe('ACTION...', () => {
     it('does nothing', async () => {

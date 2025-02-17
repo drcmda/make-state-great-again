@@ -428,6 +428,12 @@ If an action type is not provided, it is defaulted to "anonymous". You can custo
 devtools(..., { anonymousActionType: 'unknown', ... })
 ```
 
+If you like to try to infer the action type from the function name, you can set `inferName` to `true`:
+
+```jsx
+devtools(..., { inferActionName: true, ... })
+```
+
 If you wish to disable devtools (on production for instance). You can customize this setting by providing the `enabled` parameter:
 
 ```jsx
