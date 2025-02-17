@@ -26,65 +26,50 @@ const useBearStore = create<BearState>()((set) => ({
 
   <br/>
 
-**TLDR**: Because state generic `T` is invariant.
+**TLDR**: Because we just provide the information for the returned type but no information for the parameter type.
 
 Consider this minimal version `create`:
 
 ```ts
 declare const create: <T>(f: (get: () => T) => T) => T
+const x = create(() => ({
+  foo: 0,
+  bar: '',
+}))
+// const x: { foo: number; bar: string; }
+```
 
+Here, if we do not provide a `get` param for `f` function, `x` can be inferred properly. However, if we provide the `get` function
+
+```ts
+declare const create: <T>(f: (get: () => T) => T) => T
 const x = create((get) => ({
   foo: 0,
   bar: () => get(),
 }))
-// `x` is inferred as `unknown` instead of
-// interface X {
-//   foo: number,
-//   bar: () => X
-// }
+// const x: unknown
 ```
 
-Here, if you look at the type of `f` in `create`, i.e. `(get: () => T) => T`, it "gives" `T` via return (making it covariant), but it also "takes" `T` via `get` (making it contravariant). "So where does `T` come from?" TypeScript wonders. It's like that chicken or egg problem. At the end TypeScript, gives up and infers `T` as `unknown`.
+`x` is inferred as `unknown`, why the difference? Let us walk through how TS Engine binds the type.
 
-So, as long as the generic to be inferred is invariant (i.e. both covariant and contravariant), TypeScript will be unable to infer it. Another simple example would be this:
+In the first case, the engine try to match `() => ({foo: 0, bar: ''})` and `(get: () => T) => T`. Based on the return type, the engine binds `T` with `{foo: 0, bar: ''}`, after doing that, all the constraint are met, it will not bother to match the parameter type because there is no parameter and will always match. Remember that `()=>number` is perfectly assignable to `(x:number)=>number`
+
+In the second case, the engine tries to match `(get) => ({foo: 0, bar: ''})` and `(get: () => T) => T`, This time, the engine sees that the `get` parameter **DOES** exist, so the strategy is different from the previous one, it **must** match it. However, `get` has an implicit `any` type without other hint to match `()=>T`, so `T` is inferred as `unknown`. Now, `T` is inferred as `unknown` in the parameter type and `{foo: 0, bar: ''}` in the return type. Finally, `T` is inferred as `unknown | {foo: 0, bar: ''}` which is `unknown`.
+
+If we provide some hints for the parameter type, it works again
 
 ```ts
-const createFoo = {} as <T>(f: (t: T) => T) => T
-const x = createFoo((_) => 'hello')
-```
-
-Here again, `x` is `unknown` instead of `string`.
-
-  <details>
-    <summary>More about the inference (just for the people curious and interested in TypeScript)</summary>
-
-In some sense this inference failure is not a problem because a value of type `<T>(f: (t: T) => T) => T` cannot be written. That is to say you can't write the real runtime implementation of `createFoo`. Let's try it:
-
-```js
-const createFoo = (f) => f(/* ? */)
-```
-
-`createFoo` needs to return the return value of `f`. And to do that we first have to call `f`. And to call it we have to pass a value of type `T`. And to pass a value of type `T` we first have to produce it. But how can we produce a value of type `T` when we don't even know what `T` is? The only way to produce a value of type `T` is to call `f`, but then to call `f` itself we need a value of type `T`. So you see it's impossible to actually write `createFoo`.
-
-So what we're saying is, the inference failure in case of `createFoo` is not really a problem because it's impossible to implement `createFoo`. But what about the inference failure in case of `create`? That also is not really a problem because it's impossible to implement `create` too. Wait a minute, if it's impossible to implement `create` then how does Zustand implement it? The answer is, it doesn't.
-
-Zustand lies that it implemented `create`'s type, it implemented only the most part of it. Here's a simple proof by showing unsoundness. Consider the following code:
-
-```ts
-import { create } from 'zustand'
-
-const useBoundStore = create<{ foo: number }>()((_, get) => ({
-  foo: get().foo,
+const x = create((get: () => { foo: number }) => ({
+  foo: 0,
+  bar: '',
 }))
+// { foo: number; bar: string; }
 ```
 
-This code compiles. But if we run it, we'll get an exception: "Uncaught TypeError: Cannot read properties of undefined (reading 'foo')". This is because `get` would return `undefined` before the initial state is created (hence you shouldn't call `get` when creating the initial state). The types promise that `get` will never return `undefined` but it does initially, which means Zustand failed to implement it.
+Note that x is inferred as `{foo:number;bar:string}` rather then `{foo:number;bar:string}`.
+Note that `{foo:number;bar:string} |{ foo:number } = {foo:number;bar:string}`
 
-And of course Zustand failed because it's impossible to implement `create` the way types promise (in the same way it's impossible to implement `createFoo`). In other words we don't have a type to express the actual `create` we have implemented. We can't type `get` as `() => T | undefined` because it would cause inconvenience and it still won't be correct as `get` is indeed `() => T` eventually, just if called synchronously it would be `() => undefined`. What we need is some kind of TypeScript feature that allows us to type `get` as `(() => T) & WhenSync<() => undefined>`, which of course is extremely far-fetched.
-
-So we have two problems: lack of inference and unsoundness. Lack of inference can be solved if TypeScript can improve its inference for invariants. And unsoundness can be solved if TypeScript introduces something like `WhenSync`. To work around lack of inference we manually annotate the state type. And we can't work around unsoundness, but it's not a big deal because it's not much, calling `get` synchronously anyway doesn't make sense.
-
-</details>
+In the real-world scenario, we know that the creator is useful only when we have a `get` function as a parameter of it. So we have to match the second version of the signature where `T` is inferred as `unknown` for sure. To fix the problem, we have to choose to annotate the type explicitly, inferring type automatically simply will not work for the reason above.
 
 </details>
 
