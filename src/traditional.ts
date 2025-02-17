@@ -3,6 +3,7 @@ import React from 'react'
 import useSyncExternalStoreExports from 'use-sync-external-store/shim/with-selector'
 import { createStore } from './vanilla.ts'
 import type {
+  ExtractState,
   Mutate,
   StateCreator,
   StoreApi,
@@ -10,8 +11,6 @@ import type {
 } from './vanilla.ts'
 
 const { useSyncExternalStoreWithSelector } = useSyncExternalStoreExports
-
-type ExtractState<S> = S extends { getState: () => infer T } ? T : never
 
 type ReadonlyStoreApi<T> = Pick<
   StoreApi<T>,
